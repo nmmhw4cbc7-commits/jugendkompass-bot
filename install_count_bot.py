@@ -102,7 +102,7 @@ def main() -> None:
 
     application.job_queue.run_daily(
         send_daily_install_count,
-        time=time(hour=11, minute=22, tzinfo=TIMEZONE),
+        time=time(hour=07, minute=0, tzinfo=TIMEZONE),
         name="daily_install_count",
     )
 
