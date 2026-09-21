@@ -2,14 +2,20 @@
 Telegram Bot: Sendet taeglich um 07:00 Uhr die Gesamtzahl der App-Installationen
 (aus Supabase, Tabelle app_analytics, event_type = 'install').
 
-Benoetigte Bibliotheken:
-    pip install python-telegram-bot==21.* supabase
+Konfiguration erfolgt ueber Umgebungsvariablen (siehe unten) - so bleiben
+Zugangsdaten aus dem Code heraus und koennen sicher z.B. in Railway hinterlegt
+werden, ohne dass sie in einem Git-Repo landen.
 
-Start:
+Benoetigte Bibliotheken:
+    pip install "python-telegram-bot[job-queue]" supabase
+
+Start (lokal, mit Umgebungsvariablen gesetzt):
     python install_count_bot.py
 """
 
 import logging
+import os
+import sys
 from datetime import time
 import zoneinfo
 
@@ -17,21 +23,31 @@ from telegram.ext import Application, ContextTypes
 from supabase import create_client, Client
 
 # -----------------------------------------------------------------------
-# KONFIGURATION - HIER ANPASSEN
+# KONFIGURATION - aus Umgebungsvariablen gelesen
 # -----------------------------------------------------------------------
 
-TELEGRAM_BOT_TOKEN = "8781032049:AAFZI03SQXmLTbYnwksFlcNPFiuPd677woc"     # TODO: eigenen Token eintragen
-TELEGRAM_CHAT_ID = 8027531086                    # TODO: eigene Chat-ID eintragen
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID_RAW = os.environ.get("TELEGRAM_CHAT_ID")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
-# Supabase-Projekt: Dashboard -> Project Settings -> API
-SUPABASE_URL = "https://vdcdibvclaulqxfjyzpq.supabase.co"   # TODO
-# WICHTIG: service_role-Key verwenden (nicht anon), damit RLS-Regeln
-# das Zaehlen nicht blockieren. Dieser Key bleibt NUR auf dem Server,
-# niemals im App-Client verwenden!
-SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZkY2RpYnZjbGF1bHF4Zmp5enBxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTQ1OTE4OSwiZXhwIjoyMDgxMDM1MTg5fQ.I29tT_hib4cHHfwY-Iep_lA9iSBjP0UL7xKNUb1TDyQ"  # TODO
-
-# Zeitzone fuer den 07:00-Versand (wichtig wegen Sommer-/Winterzeit)
 TIMEZONE = zoneinfo.ZoneInfo("Europe/Berlin")
+
+REQUIRED_VARS = {
+    "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+    "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID_RAW,
+    "SUPABASE_URL": SUPABASE_URL,
+    "SUPABASE_SERVICE_ROLE_KEY": SUPABASE_SERVICE_ROLE_KEY,
+}
+missing = [name for name, value in REQUIRED_VARS.items() if not value]
+if missing:
+    sys.exit(
+        "Fehlende Umgebungsvariablen: "
+        + ", ".join(missing)
+        + ". Bitte in Railway (oder lokal per .env) setzen."
+    )
+
+TELEGRAM_CHAT_ID = int(TELEGRAM_CHAT_ID_RAW)
 
 # -----------------------------------------------------------------------
 # LOGGING
@@ -51,14 +67,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 
 def get_total_installs() -> int:
-    """
-    Zaehlt alle Zeilen in app_analytics mit event_type = 'install'.
-
-    Hinweis: Das zaehlt Install-EVENTS, nicht zwingend eindeutige Geraete
-    (falls jemand die App neu installiert, kann ein zweites Install-Event
-    entstehen). Falls du stattdessen eindeutige Geraete zaehlen willst,
-    nutze die auskommentierte Variante unten (per SQL-Funktion in Supabase).
-    """
+    """Zaehlt alle Zeilen in app_analytics mit event_type = 'install'."""
     response = (
         supabase.table("app_analytics")
         .select("id", count="exact")
@@ -66,19 +75,6 @@ def get_total_installs() -> int:
         .execute()
     )
     return response.count
-
-    # --- Alternative: eindeutige Geraete zaehlen ---
-    # Dafuer in Supabase (SQL-Editor) einmalig anlegen:
-    #
-    # create or replace function count_unique_installs()
-    # returns bigint language sql stable as $$
-    #   select count(distinct device_id) from app_analytics
-    #   where event_type = 'install';
-    # $$;
-    #
-    # und dann hier statt obigem Block:
-    # response = supabase.rpc("count_unique_installs").execute()
-    # return response.data
 
 
 # -----------------------------------------------------------------------
