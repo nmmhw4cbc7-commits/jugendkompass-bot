@@ -1,6 +1,7 @@
 """
 Telegram Bot: Sendet taeglich um 07:00 Uhr die Gesamtzahl der App-Installationen
-(aus Supabase, Tabelle app_analytics, event_type = 'install').
+(aus Supabase, Tabelle app_analytics, event_type = 'install') sowie die Anzahl
+neuer Abonnements der letzten 24 Stunden (Tabelle subscriptions).
 
 Konfiguration erfolgt ueber Umgebungsvariablen (siehe unten) - so bleiben
 Zugangsdaten aus dem Code heraus und koennen sicher z.B. in Railway hinterlegt
@@ -16,7 +17,7 @@ Start (lokal, mit Umgebungsvariablen gesetzt):
 import logging
 import os
 import sys
-from datetime import time
+from datetime import time, datetime, timedelta, timezone
 import zoneinfo
 
 from telegram.ext import Application, ContextTypes
@@ -77,6 +78,18 @@ def get_total_installs() -> int:
     return response.count
 
 
+def get_new_subscriptions_today() -> int:
+    """Zaehlt neue Eintraege in subscriptions der letzten 24 Stunden."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    response = (
+        supabase.table("subscriptions")
+        .select("id", count="exact")
+        .gte("created_at", cutoff)
+        .execute()
+    )
+    return response.count
+
+
 # -----------------------------------------------------------------------
 # TAEGLICHER JOB
 # -----------------------------------------------------------------------
@@ -85,10 +98,14 @@ async def send_daily_install_count(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Wird taeglich um 07:00 Uhr ausgefuehrt und sendet die Nachricht."""
     try:
         total_installs = get_total_installs()
-        message = f"📊 Gesamtzahl der App-Installationen seit dem Update: {total_installs:,}".replace(",", ".")
+        new_subs = get_new_subscriptions_today()
+        message = (
+            f"📊 Installationen seit dem Update: {total_installs:,}\n"
+            f"📬 Neue Abonnements (24h): {new_subs:,}"
+        ).replace(",", ".")
     except Exception as exc:  # pragma: no cover
-        logger.exception("Fehler beim Abrufen der Installationszahlen")
-        message = f"⚠️ Konnte Installationszahlen nicht abrufen: {exc}"
+        logger.exception("Fehler beim Abrufen der Zahlen")
+        message = f"⚠️ Konnte Zahlen nicht abrufen: {exc}"
 
     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
 
@@ -102,7 +119,7 @@ def main() -> None:
 
     application.job_queue.run_daily(
         send_daily_install_count,
-        time=time(hour=14, minute=1, tzinfo=TIMEZONE),
+        time=time(hour=7, minute=0, tzinfo=TIMEZONE),
         name="daily_install_count",
     )
 
