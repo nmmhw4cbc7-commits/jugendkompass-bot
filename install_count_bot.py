@@ -85,7 +85,7 @@ async def send_daily_install_count(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Wird taeglich um 07:00 Uhr ausgefuehrt und sendet die Nachricht."""
     try:
         total_installs = get_total_installs()
-        message = f"📊 Gesamtzahl der App-Installationen: {total_installs:,}".replace(",", ".")
+        message = f"📊 Gesamtzahl der App-Installationen seit dem Update: {total_installs:,}".replace(",", ".")
     except Exception as exc:  # pragma: no cover
         logger.exception("Fehler beim Abrufen der Installationszahlen")
         message = f"⚠️ Konnte Installationszahlen nicht abrufen: {exc}"
